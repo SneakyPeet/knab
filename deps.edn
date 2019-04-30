@@ -1,2 +1,5 @@
-{:deps {cheshire     {:mvn/version "5.8.1"}
-        clj-http     {:mvn/version "3.9.1"}}}
+{:deps {cheshire          {:mvn/version "5.8.1"}
+        clj-http          {:mvn/version "3.9.1"}
+        clojure.java-time {:mvn/version "0.3.0"}
+        hiccup            {:mvn/version "1.0.5"}
+        http-kit          {:mvn/version "2.3.0"}}}

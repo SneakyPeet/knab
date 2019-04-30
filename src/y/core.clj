@@ -1,6 +1,7 @@
 (ns y.core
   (:require [y.api :as api]
-            [clj-http.client :as http]))
+            [clj-http.client :as http]
+            [java-time :as time]))
 
 
 (defn get-config
@@ -41,7 +42,7 @@
                 :transactions
                 (map #(assoc % :category category))))
          (reduce into)
-         (filter #(false? :deleted %))
+         (filter #(false? (:deleted %)))
          (map #(select-keys % [:category :amount :date :payee_name])))))
 
 
@@ -55,8 +56,37 @@
      :transactions transactions}))
 
 
+
+
+(defn process-data [data]
+  (let [{:keys [categories transactions]} data
+        total-budgeted (->> categories
+                            (map :budgeted)
+                            (reduce +))
+        total-spent (->> transactions
+                         (map :amount)
+                         (reduce +))
+        total-left (+ total-budgeted total-spent)
+        start-of-month (time/local-date "yyyy-MM-dd" (current-month data))
+        days-in-month (time/as (time/minus (time/plus start-of-month (time/months 1)) (time/days 1)) :day-of-month)
+        current-day (time/as (time/local-date) :day-of-month)
+        days-left (- days-in-month (dec current-day))
+        budget-per-day (/ total-budgeted days-in-month)
+        available-per-day (/ total-left days-left)]
+    (assoc data
+           :total-budgeted total-budgeted
+           :total-spent (Math/abs total-spent)
+           :total-left total-left
+           :days-in-month days-in-month
+           :days-left days-left
+           :budget-per-day budget-per-day
+           :available-per-day available-per-day)))
+
+
+
+
 (comment
 
-  (def d (all-data (get-config)))
+  (def d (process-data (all-data (get-config))))
 
   )
