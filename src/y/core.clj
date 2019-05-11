@@ -56,6 +56,15 @@
      :transactions transactions}))
 
 
+(defn days-ahead-of-budget [budget-per-day total-left days-left]
+  (loop [n 0]
+    (let [days (- days-left n)]
+      (if (<= days 0)
+        n
+        (let [budget (/ total-left days)]
+          (if (>= budget budget-per-day)
+            n
+            (recur (inc n))))))))
 
 
 (defn process-data [data]
@@ -80,13 +89,14 @@
            :days-in-month days-in-month
            :days-left days-left
            :budget-per-day budget-per-day
-           :available-per-day available-per-day)))
+           :available-per-day available-per-day
+           :days-ahead-of-budget (days-ahead-of-budget budget-per-day total-left days-left))))
 
 
 
 
 (comment
 
-  (def d (process-data (all-data (get-config))))
-
+  (def d (identity (all-data (get-config))))
+  (process-data d)
   )

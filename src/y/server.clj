@@ -23,20 +23,18 @@
             [:tr
              [:th {:style "border-top: solid 2px black"} "Left"]
              [:td.has-text-right
-              {:class (let [used (double (* 100 (/ (:total-left d) (:total-budgeted d))))]
-                        (cond
-                          (neg? (:total-left d)) "has-text-danger"
-                          (> used 50.0) "has-text-success"
-                          (> used 25.0) "has-text-warning"
-                          :else "has-text-danger"))
-               :style "border-top: solid 2px black"}
-              (money (:total-left d))]]]]]
+              {:style "border-top: solid 2px black"}
+              (money (:total-left d))]]
+            (when-not (zero? (:days-ahead-of-budget d))
+              [:tr [:td.has-text-danger.has-text-right {:colspan 2}
+                    (:days-ahead-of-budget d) " days ahead of budget!"]])]]]
          [:div.column.is-narrow
           [:h1.title.has-text-right "Available"]
           [:table.table.is-fullwidth
            [:thead
             [:tr [:th] [:th "Budgeted"] [:th "Actual"]]]
            [:tbody
+
             [:tr
              [:th "Available Per Day"]
              [:td.has-text-right (money (:budget-per-day d))]
