@@ -98,5 +98,5 @@
 (comment
 
   (def d (identity (all-data (get-config))))
-  (process-data d)
+  (spit "test.html"(process-data d))
   )

@@ -2,13 +2,62 @@
   (:require [y.core :as core]
             [java-time :as time]
             [hiccup.core :as hiccup]
-            [org.httpkit.server :as http]))
+            [org.httpkit.server :as http]
+            [cheshire.core :as json]))
 
 
 (defn- money [n]
   (-> n
       (/ 1000)
       int))
+
+
+(defn- spend-chart-data [d]
+  (let [total-budgeted (money (:total-budgeted d))
+        budget-per-day (:budget-per-day d)
+        available-per-day (:available-per-day d)
+        days-in-month (:days-in-month d)
+        all-days (range 1 (inc days-in-month))
+        all-days-data (->> all-days
+                           (map (fn [d]
+                                  {:x d :y (- total-budgeted (money (* budget-per-day (dec d))))})))
+        spend-per-day (->> d
+                           :transactions
+                           (map (juxt #(:day-of-month (time/as-map (time/local-date "yyyy-MM-dd" (:date %)))) :amount))
+                           (group-by first)
+                           (map (fn [[day amounts]]
+                                  [day (->> amounts (map last) (reduce +))]))
+                           (sort-by first))
+        actual (loop [total (:total-budgeted d)
+                      items spend-per-day
+                      result []]
+                 (if (empty? items)
+                   result
+                   (let [[day amount] (first items)
+                         new-total (+ total amount)]
+                     (recur
+                      new-total
+                      (rest items)
+                      (conj result {:x day :y (money new-total)})))))
+        ]
+    {:type "line"
+     :data {:labels (map str all-days)
+            :datasets
+            [{:label "budget"
+              :fill false
+              :pointBackgroundColor	"transparent"
+              :pointBorderColor "transparent"
+              :data all-days-data}
+             {:label "actual"
+              :borderColor (if (>= available-per-day budget-per-day) "lightgreen" "red")
+              :fill false
+              :pointBackgroundColor	"transparent"
+              :pointBorderColor "transparent"
+              :data actual}]}
+     :options {:legend {:display false}
+               :scales {:yAxes [{:display false} {:display false}]
+                        :xAxes [{:display false :ticks {:display false}}
+                                {:display false :ticks {:display false}}]}}}))
 
 
 (defn main-page [d]
@@ -25,9 +74,11 @@
              [:td.has-text-right
               {:style "border-top: solid 2px black"}
               (money (:total-left d))]]
-            (when-not (zero? (:days-ahead-of-budget d))
-              [:tr [:td.has-text-danger.has-text-right {:colspan 2}
-                    (:days-ahead-of-budget d) " days ahead of budget!"]])]]]
+            ]]
+          [:canvas {:id "spend" :height "80"}]
+          (when-not (zero? (:days-ahead-of-budget d))
+            [:div.has-text-danger {:style "text-align: center; margin-top: 5px;"}
+             (:days-ahead-of-budget d) " days ahead of budget!"])]
          [:div.column.is-narrow
           [:h1.title.has-text-right "Available"]
           [:table.table.is-fullwidth
@@ -72,7 +123,13 @@
                       [:td (time/as (time/local-date date) :day-of-month)]
                       [:td.has-text-right (money amount)]
                       [:td (:name category)]
-                      [:td payee_name]])))]]]]]]
+                      [:td payee_name]])))]]]]
+         [:script {:src "https://cdnjs.cloudflare.com/ajax/libs/Chart.js/2.8.0/Chart.bundle.min.js"}]
+         [:script
+          (str
+           "var data = JSON.parse('" (json/generate-string (spend-chart-data d)) "');"
+           "var ctx = document.getElementById('spend');"
+           "var spendChart = new Chart(ctx, data);")]]]
     (hiccup/html
      [:html
       [:head
@@ -81,7 +138,8 @@
        [:link {:rel "stylesheet" :href "https://cdnjs.cloudflare.com/ajax/libs/bulma/0.7.4/css/bulma.min.css"}]]
       [:body
        [:section.section
-        content]]])
+        content]
+       ]])
     ))
 
 
@@ -116,6 +174,3 @@
 
 (defn -main [& args]
   (start-server))
-
-
-(stop-server)
