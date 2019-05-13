@@ -20,7 +20,7 @@
         all-days (range 1 (inc days-in-month))
         all-days-data (->> all-days
                            (map (fn [d]
-                                  {:x d :y (- total-budgeted (money (* budget-per-day (dec d))))})))
+                                  {:x d :y (- total-budgeted (money (* budget-per-day d)))})))
         spend-per-day (->> d
                            :transactions
                            (map (juxt #(:day-of-month (time/as-map (time/local-date "yyyy-MM-dd" (:date %)))) :amount))
@@ -78,7 +78,10 @@
           [:canvas {:id "spend" :height "80"}]
           (when-not (zero? (:days-ahead-of-budget d))
             [:div.has-text-danger {:style "text-align: center; margin-top: 5px;"}
-             (:days-ahead-of-budget d) " days ahead of budget!"])]
+             (:days-ahead-of-budget d)
+             " days ahead of budget ("
+             (- (* (money (:budget-per-day d)) (:days-left d)) (money (:total-left d)))
+             ")"])]
          [:div.column.is-narrow
           [:h1.title.has-text-right "Available"]
           [:table.table.is-fullwidth
@@ -142,6 +145,12 @@
        ]])
     ))
 
+(comment
+
+  (def d (core/process-data (core/all-data (core/get-config))))
+
+  (spit "test.html" (main-page d))
+  )
 
 (defn build-page []
   (let [data (core/process-data (core/all-data (core/get-config)))
