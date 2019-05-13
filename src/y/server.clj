@@ -61,7 +61,9 @@
 
 
 (defn main-page [d]
-  (let [content
+  (let [indicator-class (if (> (:budget-per-day d) (:available-per-day d))
+                          "has-text-danger" "has-text-success")
+        content
         [:div.columns
          [:div.column.is-narrow
           [:h1.title.has-text-right "Budget"]
@@ -70,9 +72,10 @@
             [:tr [:th "Budget"] [:td.has-text-right (money (:total-budgeted d))]]
             [:tr [:th "Spent"] [:td.has-text-right (money (:total-spent d))]]
             [:tr
-             [:th {:style "border-top: solid 2px black"} "Left"]
+             [:th {:style "border-top: solid 2px black" :class indicator-class} "Left"]
              [:td.has-text-right
-              {:style "border-top: solid 2px black"}
+              {:style "border-top: solid 2px black"
+               :class indicator-class}
               (money (:total-left d))]]
             ]]
           [:canvas {:id "spend" :height "80"}]
@@ -86,17 +89,18 @@
           [:h1.title.has-text-right "Available"]
           [:table.table.is-fullwidth
            [:thead
-            [:tr [:th] [:th "Budgeted"] [:th "Actual"]]]
+            [:tr [:th] [:th "Budgeted"] [:th {:class indicator-class} "Actual"]]]
+
            [:tbody
 
             [:tr
              [:th "Available Per Day"]
              [:td.has-text-right (money (:budget-per-day d))]
-             [:td.has-text-right (money (:available-per-day d))]]
+             [:td.has-text-right {:class indicator-class} (money (:available-per-day d))]]
             [:tr
              [:th "Available Per Week"]
              [:td.has-text-right (money (* 7 (:budget-per-day d)))]
-             [:td.has-text-right (money (* 7 (:available-per-day d)))]]
+             [:td.has-text-right {:class indicator-class} (money (* 7 (:available-per-day d)))]]
             ]]]
          [:div.column.is-narrow
           [:h1.title.has-text-right "Category Spend"]
@@ -142,14 +146,14 @@
       [:body
        [:section.section
         content]
-       ]])
-    ))
+       ]])))
 
 (comment
 
   (def d (core/process-data (core/all-data (core/get-config))))
 
   (spit "test.html" (main-page d))
+
   )
 
 (defn build-page []
