@@ -7,9 +7,11 @@
 
 
 (defn- money [n]
-  (-> n
-      (/ 1000)
-      int))
+  (if n
+    (-> n
+        (/ 1000)
+        int)
+    0))
 
 
 (defn- spend-chart-data [d]
@@ -66,7 +68,8 @@
         content
         [:div.columns
          [:div.column.is-narrow
-          [:h1.title.has-text-right "Budget"]
+          [:h1 {:id "available" :style "font-size: 70px; text-align: center;"}]
+          [:canvas {:id "spend" :height "80"}]
           [:table.table.is-fullwidth
            [:tbody
             [:tr [:th "Budget"] [:td.has-text-right (money (:total-budgeted d))]]
@@ -78,7 +81,6 @@
                :class indicator-class}
               (money (:total-left d))]]
             ]]
-          [:canvas {:id "spend" :height "80"}]
           (when-not (zero? (:days-ahead-of-budget d))
             [:div.has-text-danger {:style "text-align: center; margin-top: 5px;"}
              (:days-ahead-of-budget d)
@@ -133,10 +135,16 @@
                       [:td payee_name]])))]]]]
          [:script {:src "https://cdnjs.cloudflare.com/ajax/libs/Chart.js/2.8.0/Chart.bundle.min.js"}]
          [:script
-          (str
-           "var data = JSON.parse('" (json/generate-string (spend-chart-data d)) "');"
-           "var ctx = document.getElementById('spend');"
-           "var spendChart = new Chart(ctx, data);")]]]
+          (clojure.string/join
+           "\r\n"
+           [(str "var chartData = JSON.parse('" (json/generate-string (spend-chart-data d)) "');")
+            "var ctx = document.getElementById('spend');"
+            "var spendChart = new Chart(ctx, chartData);"
+            (str"var budgetData =JSON.parse('" (json/generate-string {:totalSpent (money (:totalSpent d))
+                                                                      :budgetPerDay (money (:budget-per-day d))}) "');")
+            "var totalDays = new Date().getDate();"
+            "var available = (budgetData.budgetPerDay * totalDays) - budgetData.totalSpent;"
+            "document.getElementById('available').innerHTML = available;"])]]]
     (hiccup/html
      [:html
       [:head
@@ -172,17 +180,17 @@
        :body (ex-cause ex)})))
 
 
-(defonce ^:private *server* (atom nil))
+(defonce ^:private *server (atom nil))
 
 
 (defn stop-server []
-  (when-not (nil? @*server*)
-    (@*server* :timeout 100)
-    (reset! *server* nil)))
+  (when-not (nil? @*server)
+    (@*server :timeout 100)
+    (reset! *server nil)))
 
 
 (defn start-server []
-  (reset! *server* (http/run-server #'app {:port 8080})))
+  (reset! *server (http/run-server #'app {:port 8080})))
 
 
 (defn -main [& args]
