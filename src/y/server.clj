@@ -3,7 +3,8 @@
             [java-time :as time]
             [hiccup.core :as hiccup]
             [org.httpkit.server :as http]
-            [cheshire.core :as json]))
+            [cheshire.core :as json]
+            [clojure.string :as s]))
 
 
 (defn- money [n]
@@ -13,63 +14,55 @@
         int)
     0))
 
-
-(defn- spend-chart-data [d]
+(defn- usage-per-day [d]
   (let [total-budgeted (money (:total-budgeted d))
-        budget-per-day (:budget-per-day d)
-        available-per-day (:available-per-day d)
+        budget-per-day (money (:budget-per-day d))
+        available-per-day (money (:available-per-day d))
         days-in-month (:days-in-month d)
         all-days (range 1 (inc days-in-month))
-        all-days-data (->> all-days
-                           (map (fn [d]
-                                  {:x d :y (- total-budgeted (money (* budget-per-day d)))})))
         spend-per-day (->> d
                            :transactions
                            (map (juxt #(:day-of-month (time/as-map (time/local-date "yyyy-MM-dd" (:date %)))) :amount))
                            (group-by first)
                            (map (fn [[day amounts]]
-                                  [day (->> amounts (map last) (reduce +))]))
-                           (sort-by first))
-        actual (loop [total (:total-budgeted d)
-                      items spend-per-day
-                      result []]
-                 (if (empty? items)
-                   result
-                   (let [[day amount] (first items)
-                         new-total (+ total amount)]
-                     (recur
-                      new-total
-                      (rest items)
-                      (conj result {:x day :y (money new-total)})))))
-        ]
-    {:type "line"
-     :data {:labels (map str all-days)
-            :datasets
-            [{:label "budget"
-              :fill false
-              :pointBackgroundColor	"transparent"
-              :pointBorderColor "transparent"
-              :data all-days-data}
-             {:label "actual"
-              :borderColor (if (>= available-per-day budget-per-day) "lightgreen" "red")
-              :fill false
-              :pointBackgroundColor	"transparent"
-              :pointBorderColor "transparent"
-              :data actual}]}
-     :options {:legend {:display false}
-               :scales {:yAxes [{:display false} {:display false}]
-                        :xAxes [{:display false :ticks {:display false}}
-                                {:display false :ticks {:display false}}]}}}))
+                                  [day (->> amounts (map last) (reduce +) money)]))
+                           (into {}))]
+    (loop [spent 0
+           days all-days
+           result []]
+      (if (empty? days)
+        result
+        (let [day (first days)
+              spent-on-day (get spend-per-day day 0)
+              total-spent (+ spent-on-day spent)
+              spend-in-month (+ total-budgeted total-spent)
+              available-at-date (* day budget-per-day)
+              used-at-date (+ available-at-date total-spent)
+              trend (- total-budgeted available-at-date)
+              dailybudget (int (/ spend-in-month  (- days-in-month (dec day)) ))
+              day-data {:day day
+                        :spendonday spent-on-day
+                        :spendinmonth spend-in-month
+                        :trend trend
+                        :availableonday used-at-date
+                        :trouble (neg? used-at-date)
+                        :dailybudget dailybudget
+                        :weeklybudget (* dailybudget 7)
+                        :daysahead (Math/abs (min 0 (int (Math/floor (/ used-at-date budget-per-day)))))}]
+          (recur
+           total-spent
+           (rest days)
+           (conj result day-data)))))))
 
 
 (defn main-page [d]
-  (let [indicator-class (if (> (:budget-per-day d) (:available-per-day d))
-                          "has-text-danger" "has-text-success")
+  (let [indicator-class "show-trouble"
         content
         [:div.columns
          [:div.column.is-narrow
           [:h1 {:id "available" :style "font-size: 70px; text-align: center;"}]
-          [:canvas {:id "spend" :height "80"}]
+          [:canvas {:id "spend-trend" :height "80"}]
+          [:h1.title.has-text-right {:style "margin-top: 30px"}"Budget"]
           [:table.table.is-fullwidth
            [:tbody
             [:tr [:th "Budget"] [:td.has-text-right (money (:total-budgeted d))]]
@@ -82,10 +75,10 @@
               (money (:total-left d))]]
             ]]
           (when-not (zero? (:days-ahead-of-budget d))
-            [:div.has-text-danger {:style "text-align: center; margin-top: 5px;"}
+            [:div {:style "text-align: center; margin-top: 5px;" :class indicator-class}
              (:days-ahead-of-budget d)
              " days ahead of budget ("
-             (- (* (money (:budget-per-day d)) (:days-left d)) (money (:total-left d)))
+             [:span {:id "ahead-of-budget"}]
              ")"])]
          [:div.column.is-narrow
           [:h1.title.has-text-right "Available"]
@@ -98,11 +91,11 @@
             [:tr
              [:th "Available Per Day"]
              [:td.has-text-right (money (:budget-per-day d))]
-             [:td.has-text-right {:class indicator-class} (money (:available-per-day d))]]
+             [:td.has-text-right {:class indicator-class :id "available-per-day"} ]]
             [:tr
              [:th "Available Per Week"]
              [:td.has-text-right (money (* 7 (:budget-per-day d)))]
-             [:td.has-text-right {:class indicator-class} (money (* 7 (:available-per-day d)))]]
+             [:td.has-text-right {:class indicator-class :id "available-per-week"} ]]
             ]]]
          [:div.column.is-narrow
           [:h1.title.has-text-right "Category Spend"]
@@ -134,17 +127,9 @@
                       [:td (:name category)]
                       [:td payee_name]])))]]]]
          [:script {:src "https://cdnjs.cloudflare.com/ajax/libs/Chart.js/2.8.0/Chart.bundle.min.js"}]
-         [:script
-          (clojure.string/join
-           "\r\n"
-           [(str "var chartData = JSON.parse('" (json/generate-string (spend-chart-data d)) "');")
-            "var ctx = document.getElementById('spend');"
-            "var spendChart = new Chart(ctx, chartData);"
-            (str"var budgetData =JSON.parse('" (json/generate-string {:totalSpent (money (:totalSpent d))
-                                                                      :budgetPerDay (money (:budget-per-day d))}) "');")
-            "var totalDays = new Date().getDate();"
-            "var available = (budgetData.budgetPerDay * totalDays) - budgetData.totalSpent;"
-            "document.getElementById('available').innerHTML = available;"])]]]
+         [:script {:src "//cdnjs.cloudflare.com/ajax/libs/ramda/0.25.0/ramda.min.js"}]
+         [:script (str "var DATA = JSON.parse('" (json/generate-string (usage-per-day d)) "');")]
+         [:script {:src "/ynab.js"}]]]
     (hiccup/html
      [:html
       [:head
@@ -156,25 +141,33 @@
         content]
        ]])))
 
-(comment
 
-  (def d (core/process-data (core/all-data (core/get-config))))
+(defn- fetch-data []
+  (core/process-data (core/all-data (core/get-config))))
 
-  (spit "test.html" (main-page d))
 
-  )
+(defn build-page [] (main-page (fetch-data)))
 
-(defn build-page []
-  (let [data (core/process-data (core/all-data (core/get-config)))
-        content (main-page data)]
-    content))
+
+(defonce ^:private *data (atom nil))
+
+
+(defn- reset-data []
+  (reset! *data (fetch-data)))
 
 
 (defn app [req]
   (try
-    {:status 200
-     :headers {"Content-Type" "text/html"}
-     :body (build-page)}
+    (let [file (:uri req)
+          content-type (cond
+                         (s/ends-with? file ".js") "text/javascript"
+                         :else "text/html")
+          body (if (= "/" file)
+                 (main-page @*data)
+                 (slurp (str "public" file)))]
+      {:status 200
+       :headers {"Content-Type" content-type}
+       :body body})
     (catch Exception ex
       {:status 500
        :body (ex-cause ex)})))
@@ -193,5 +186,11 @@
   (reset! *server (http/run-server #'app {:port 8080})))
 
 
-(defn -main [& args]
-  (start-server))
+(comment
+
+  (do
+    (reset-data)
+    (start-server))
+
+  (stop-server)
+  )
