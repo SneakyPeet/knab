@@ -62,6 +62,7 @@
          [:div.column.is-narrow
           [:h1 {:id "available" :style "font-size: 70px; text-align: center;"}]
           [:canvas {:id "spend-trend" :height "80"}]
+          [:canvas {:id "spend-daily" :height "30"}]
           [:h1.title.has-text-right {:style "margin-top: 30px"}"Budget"]
           [:table.table.is-fullwidth
            [:tbody

@@ -64,3 +64,27 @@ const trendChartData = {
 };
 
 new Chart(document.getElementById(trendChartId), trendChartData);
+
+const barChartId = "spend-daily";
+const barChartData = {
+  type: "bar",
+  data: {
+    labels: R.map(R.prop("day"), DATA),
+    datasets: [{
+      label: "spend",
+      data: R.pipe(
+        R.filter(R.compose(R.gte(currentDay), R.prop("day"))),
+        R.map(R.compose(Math.abs, R.prop("spendonday")))
+      )(DATA)
+    }]
+  },
+  options: {
+    legend: {display: false},
+    scales: {
+      yAxes: [{display: false}, {display: false}],
+      xAxes: [{display: false, ticks: {display: false}}, {display: false, ticks: {display: false}}]
+    }
+  }
+}
+
+new Chart(document.getElementById(barChartId), barChartData);
