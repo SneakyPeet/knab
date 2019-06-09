@@ -4,7 +4,9 @@
             [java-time :as time]))
 
 
-(defn get-config
+;;;; CONFIG
+
+(defn- get-config
   ([] (get-config "config.edn"))
   ([path]
    (let [{:keys [budget-id token] :as config} (read-string (slurp path))
@@ -12,11 +14,23 @@
      (assoc config :client client))))
 
 
-(defn current-month [month-data]
+;;;; HELPERS
+
+(defn money [n]
+  (if n
+    (-> n
+        (/ 1000)
+        int)
+    0))
+
+
+(defn- current-month [month-data]
   (get-in month-data [:month :month]))
 
 
-(defn categories [config month-data]
+;;;; FETCH
+
+(defn- categories [config month-data]
   (let [{:keys [category-group-id uncategorized-group-id ]} config
         category-groups (->> month-data
                              :month
@@ -32,7 +46,7 @@
      (map #(select-keys % [:category_group_id :name :budgeted :activity :balance :id])))))
 
 
-(defn transactions [config month-data categories]
+(defn- transactions [config month-data categories]
   (let [client (:client config)
         since (current-month month-data)]
     (->> (for [category categories]
@@ -46,7 +60,7 @@
          (map #(select-keys % [:category :amount :date :payee_name])))))
 
 
-(defn all-data [config]
+(defn- all-data [config]
   (let [{:keys [client]} config
         month (api/->data (api/parse-response (client (api/current-month))))
         categories (categories config month)
@@ -56,18 +70,49 @@
      :transactions transactions}))
 
 
-(defn days-ahead-of-budget [budget-per-day total-left days-left]
-  (loop [n 0]
-    (let [days (- days-left n)]
-      (if (<= days 0)
-        n
-        (let [budget (/ total-left days)]
-          (if (>= budget budget-per-day)
-            n
-            (recur (inc n))))))))
+;;;; PROCESS
+
+(defn- usage-per-day [d]
+  (let [total-budgeted (:total-budgeted d)
+        budget-per-day (:budget-per-day d)
+        days-in-month (:days-in-month d)
+        all-days (range 1 (inc days-in-month))
+        spend-per-day (->> d
+                           :transactions
+                           (map (juxt #(:day-of-month (time/as-map (time/local-date "yyyy-MM-dd" (:date %)))) :amount))
+                           (group-by first)
+                           (map (fn [[day amounts]]
+                                  [day (->> amounts (map last) (reduce +) money)]))
+                           (into {}))]
+    (loop [spent 0
+           days all-days
+           result []]
+      (if (empty? days)
+        result
+        (let [day (first days)
+              spent-on-day (get spend-per-day day 0)
+              total-spent (+ spent-on-day spent)
+              spend-in-month (+ total-budgeted total-spent)
+              available-at-date (* day budget-per-day)
+              used-at-date (+ available-at-date total-spent)
+              trend (- total-budgeted available-at-date)
+              dailybudget (int (/ spend-in-month  (- days-in-month (dec day)) ))
+              day-data {:day day
+                        :spendonday spent-on-day
+                        :spendinmonth spend-in-month
+                        :trend trend
+                        :availableonday used-at-date
+                        :trouble (neg? used-at-date)
+                        :dailybudget dailybudget
+                        :weeklybudget (* dailybudget 7)
+                        :daysahead (Math/abs (min 0 (int (Math/floor (/ used-at-date budget-per-day)))))}]
+          (recur
+           total-spent
+           (rest days)
+           (conj result day-data)))))))
 
 
-(defn process-data [data]
+(defn- process-data [data]
   (let [{:keys [categories transactions]} data
         total-budgeted (->> categories
                             (map :budgeted)
@@ -81,22 +126,18 @@
         current-day (time/as (time/local-date) :day-of-month)
         days-left (- days-in-month (dec current-day))
         budget-per-day (/ total-budgeted days-in-month)
-        available-per-day (/ total-left days-left)]
-    (assoc data
-           :total-budgeted total-budgeted
-           :total-spent (Math/abs total-spent)
-           :total-left total-left
-           :days-in-month days-in-month
-           :days-left days-left
-           :budget-per-day budget-per-day
-           :available-per-day available-per-day
-           :days-ahead-of-budget (days-ahead-of-budget budget-per-day total-left days-left))))
+        available-per-day (/ total-left days-left)
+        base-data
+        (assoc data
+               :total-budgeted (money total-budgeted)
+               :total-spent (money (Math/abs total-spent))
+               :total-left (money total-left)
+               :days-in-month days-in-month
+               :budget-per-day (money budget-per-day)
+               :available-per-day available-per-day)]
+    (assoc base-data :usage-per-day (usage-per-day base-data))))
 
 
-
-
-(comment
-
-  (def d (identity (all-data (get-config))))
-  (spit "test.html"(process-data d))
-  )
+;;;; MAIN
+(defn fetch-and-process-data []
+  (process-data (all-data (get-config))))
